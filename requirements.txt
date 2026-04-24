@@ -1,0 +1,13 @@
+SpeechRecognition
+pyttsx3
+pywhatkit
+pyautogui
+wikipedia
+pygame
+requests
+opencv-python
+geopy
+gTTS
+google-genai
+winsdk
+

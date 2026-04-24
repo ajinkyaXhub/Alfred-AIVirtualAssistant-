@@ -1,0 +1,190 @@
+import speech_recognition as sr
+import webbrowser
+import pyttsx3
+import time
+import sys
+import os
+import platform
+import pywhatkit
+import pyautogui
+import wikipedia
+import pygame
+import requests
+import cv2
+import asyncio
+import musiclib
+from winsdk.windows.devices.geolocation import Geolocator
+
+from geopy.geocoders import Nominatim
+from gtts import gTTS
+
+from google import genai
+client = genai.Client(api_key="AIzaSyDNrvDAn0wL-fCd2gqVGNXg00IWlOAeXP4")
+model_id = "gemini-2.0-flash" 
+chat_session = client.chats.create(
+    model=model_id,
+    config={"system_instruction": "You are Alfred, a loyal and witty indian butler assistant. Keep your responses concise and helpful."}
+)
+
+recognizer = sr.Recognizer()
+recognizer.pause_threshold = 1.5 
+recognizer.non_speaking_duration = 0.5
+
+brave_path = r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
+webbrowser.register('brave', None, webbrowser.GenericBrowser(brave_path))
+ 
+def speak(text):
+    print(f"Alfred: {text}")
+    engine = pyttsx3.init()
+    engine.say(text)
+    engine.runAndWait()
+    engine.stop()
+
+def listen_for_voice(timeout=5):
+    with sr.Microphone() as source:
+        try:
+            audio = recognizer.listen(source, timeout=timeout, phrase_time_limit=5)
+            return recognizer.recognize_google(audio).lower()
+        except:
+            return ""
+
+def ask_gemini(query):
+    try:
+        response = chat_session.send_message(query)
+        return response.text
+    except:
+        return "My apologies sir, I'm having trouble connecting."
+
+def deep_chat_mode():
+    speak("Deep chat mode activated.")
+    while True:
+        print("Deep Chat Active... Listening...")
+        query = listen_for_voice(timeout=10) 
+        
+        if not query:
+            continue
+            
+        print(f"You said: {query}")
+        
+        if "exit chat" in query or "go back" in query:
+            speak("Returning to standard mode,sir.")
+            break
+            
+        reply = ask_gemini(query)
+        speak(reply)
+        
+        
+def processCommand(c):
+    c_lower = c.lower()
+    
+    async def get_coords():
+        locator = Geolocator()
+        pos = await locator.get_geoposition_async()
+        return pos.coordinate.latitude, pos.coordinate.longitude
+
+    
+    if "start deep chat" in c_lower:
+        deep_chat_mode() 
+        return True
+    
+    elif "search" in c_lower:
+        query = c.replace("search", "").replace("for", "").strip()
+        speak(f"Searching Google for {query}")
+        pywhatkit.search(query)
+        return True
+
+    elif "open google" in c_lower:
+        speak("Opening Google")
+        webbrowser.get('brave').open("https://www.google.com") 
+        return True
+        
+    elif "open youtube" in c_lower:
+        speak("Opening YouTube")
+        webbrowser.open("https://www.youtube.com")
+        return True
+
+    elif "play" in c_lower:
+        try:
+            song = c_lower.split(" ")[1]
+            link = musiclib.music[song]
+            speak(f"Playing {song}")
+            webbrowser.get('brave').open(link)
+        except:
+            speak("Song not found in library.")
+        return True 
+
+    elif "exit" in c_lower or "stop" in c_lower:
+        speak("Goodbye sir")
+        return False 
+
+    elif "screenshot" in c_lower:
+        name = f"screenshot_{int(time.time())}.png"
+        pyautogui.screenshot(name)
+        speak(f"Screenshot saved,sir.")
+        return True
+
+    elif "my location" in c_lower:
+        speak("Identifying your current address,sir.")
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            coords = loop.run_until_complete(get_coords())
+            lat, lon = coords
+            geolocator = Nominatim(user_agent="AlfredAssistant")
+            location = geolocator.reverse(f"{lat}, {lon}")
+            address_data = location.raw['address']
+            city = address_data.get('city') or address_data.get('town') or address_data.get('village')
+            speak(f"Sir, you are currently in {city}. The exact address is {location.address}")
+        except:
+            speak("I couldn't pinpoint the address, sir.")
+        return True
+
+    elif "take a photo" in c_lower or "take a selfie" in c_lower:
+        speak("Initializing camera. 3... 2... 1...")
+        cam = cv2.VideoCapture(0)
+        ret, frame = cam.read()
+        if ret:
+            if not os.path.exists("Selfies"): os.makedirs("Selfies")
+            file_name = f"Selfies/selfie_{int(time.time())}.png"
+            cv2.imwrite(file_name, frame)
+            speak("Photo captured,sir.")
+        cam.release()
+        return True
+
+    else:
+        reply = ask_gemini(c)
+        speak(reply)
+        return True
+
+if __name__ == "__main__":
+    speak("Initializing Alfred...")
+    
+    with sr.Microphone() as source:
+        recognizer.adjust_for_ambient_noise(source, duration=1)
+
+    is_running = True
+    while is_running:
+        print("\nRecognizing...")
+        try:
+            with sr.Microphone() as source:
+                print("Listening for wake word...")
+                audio = recognizer.listen(source, timeout=3, phrase_time_limit=2)
+            
+            word = recognizer.recognize_google(audio)
+            print(f"Heard: {word}")
+
+            if "alfred" in word.lower():
+                speak("Yes sir.")
+                with sr.Microphone() as source:
+                    print("Alfred active... Listening for command")
+                    time.sleep(0.5) 
+                    audio = recognizer.listen(source, timeout=3, phrase_time_limit=5)
+                    command = recognizer.recognize_google(audio)
+                    print(f"Command: {command}")
+                    
+                    is_running = processCommand(command)
+
+        except (sr.WaitTimeoutError, sr.UnknownValueError):
+            continue
+        except Exception as e:
+            print(f"Error: {e}")
